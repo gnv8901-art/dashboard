@@ -406,10 +406,11 @@ body{
     </div>
   </div>
   <div class="hdr-right">
-    <div class="sync-btn" onclick="loadData()">
+    <div class="sync-btn" onclick="manualRefresh()">
       <div class="sync-dot" id="sync-dot"></div>
       <span id="sync-lbl">Обновить</span>
     </div>
+    <div id="auto-badge" style="font-size:10px;color:var(--text3);display:none">↻ <span id="countdown">5:00</span></div>
     <div class="cfg-badge" onclick="toggleCfg()">⚙ Настройки</div>
     <div id="hdr-clock"></div>
   </div>
@@ -1528,6 +1529,91 @@ function fmtDate(v){
   if(!d || isNaN(d)) return String(v);
   return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'});
 }
+
+// ══════ AUTO-REFRESH ══════
+var AUTO_INTERVAL  = 5 * 60; // 5 минут в секундах
+var countdownSec   = AUTO_INTERVAL;
+var autoTimer      = null;
+var countdownTimer = null;
+var lastUpdated    = null;
+
+function manualRefresh(){
+  // Сброс таймера при ручном обновлении
+  resetCountdown();
+  loadData();
+}
+
+function startAutoRefresh(){
+  if(!SHEET_ID) return;
+  // Показываем бейдж с обратным отсчётом
+  var badge = document.getElementById('auto-badge');
+  if(badge) badge.style.display = 'inline';
+  // Запускаем обратный отсчёт
+  resetCountdown();
+}
+
+function resetCountdown(){
+  countdownSec = AUTO_INTERVAL;
+  if(countdownTimer) clearInterval(countdownTimer);
+  if(autoTimer)      clearTimeout(autoTimer);
+  updateCountdownDisplay();
+  // Тикаем каждую секунду
+  countdownTimer = setInterval(function(){
+    countdownSec--;
+    updateCountdownDisplay();
+    if(countdownSec <= 0){
+      clearInterval(countdownTimer);
+      // Обновляем данные
+      loadData();
+      // После загрузки — снова запускаем
+      setTimeout(function(){ resetCountdown(); }, 1000);
+    }
+  }, 1000);
+}
+
+function updateCountdownDisplay(){
+  var el = document.getElementById('countdown');
+  if(!el) return;
+  var m = Math.floor(countdownSec / 60);
+  var s = countdownSec % 60;
+  el.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+  // Когда < 30 сек — подсвечиваем
+  var badge = document.getElementById('auto-badge');
+  if(badge){
+    badge.style.color = countdownSec < 30 ? 'var(--gold3)' : 'var(--text3)';
+  }
+}
+
+// Показываем время последнего обновления в кнопке
+var _origSetSyncState = setSyncState;
+setSyncState = function(state){
+  _origSetSyncState(state);
+  if(state === 'ok'){
+    lastUpdated = new Date();
+    var lbl = document.getElementById('sync-lbl');
+    if(lbl){
+      var t = lastUpdated.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+      lbl.textContent = 'Обновлено в ' + t;
+      setTimeout(function(){
+        if(lbl) lbl.textContent = 'Обновить';
+      }, 3000);
+    }
+  }
+};
+
+// Запускаем авто-обновление после инициализации
+var _origDocReady = document.addEventListener;
+window.addEventListener('load', function(){
+  if(SHEET_ID){
+    startAutoRefresh();
+  }
+});
+// Также запускаем если ID появился после saveCfg
+var _origSaveCfg = saveCfg;
+saveCfg = function(){
+  _origSaveCfg();
+  setTimeout(startAutoRefresh, 500);
+};
 </script>
 </body>
 </html>
